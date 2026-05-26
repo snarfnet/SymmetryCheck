@@ -18,7 +18,7 @@ CERT_PATH = WORK_DIR / "distribution.cer"
 INVALID_SERIALS = {
     "797262360B421323CA2A52F022C3F0BF",
 }
-CI_CERT_MARKERS = ("morimoriphotomaker", "morimori photo maker")
+CI_CERT_MARKERS = ("ci distribution", "symmetrycheck", "morimoriphotomaker", "morimori photo maker")
 
 
 def run(args):
@@ -121,6 +121,8 @@ def should_clear_stale_certificates(error):
         or "reached" in text
         or "already have a current" in text
         or "pending certificate request" in text
+        or "entity_error" in text
+        or "problem with the request entity" in text
     )
 
 
@@ -174,6 +176,9 @@ def import_certificate(certificate):
 
 def main():
     generate_csr()
+    if REPLACE_DISTRIBUTION_CERTIFICATE:
+        deleted = delete_known_invalid_certificates()
+        print(f"Pre-cleaned {deleted} certificate(s) before creation.")
     certificate = create_certificate()
     import_certificate(certificate)
 
