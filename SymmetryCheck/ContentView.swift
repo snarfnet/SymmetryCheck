@@ -109,7 +109,7 @@ struct ContentView: View {
                 metricRow(isEnglish ? "Eye Balance" : "目のバランス", result.eyeBalance, .green)
                 metricRow(isEnglish ? "Eyebrow" : "眉のバランス", result.eyebrowBalance, .yellow)
                 metricRow(isEnglish ? "Nose Straight" : "鼻の直線性", result.noseStraightness, .cyan)
-                metricRow(isEnglish ? "Mouth" : "口のバランス", result.mouthBalance, .magenta)
+                metricRow(isEnglish ? "Mouth" : "口のバランス", result.mouthBalance, .pink)
                 metricRow(isEnglish ? "Jaw Line" : "輪郭バランス", result.jawBalance, .white)
             }
             .padding(.horizontal, 12)
