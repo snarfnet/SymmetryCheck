@@ -8,3 +8,4 @@ build/
 *.dSYM.zip
 *.dSYM
 .DS_Store
+.omc/

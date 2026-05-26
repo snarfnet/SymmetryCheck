@@ -53,8 +53,8 @@ jobs:
         env:
           ASC_API_KEY: ${{ secrets.ASC_API_KEY_CONTENT }}
         run: |
-          mkdir -p ~/private_keys
-          echo "$ASC_API_KEY" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_API_KEY" | base64 -D > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
 
       - name: Build archive
         run: |
@@ -64,7 +64,7 @@ jobs:
             -archivePath $RUNNER_TEMP/SymmetryCheck.xcarchive \
             -destination "generic/platform=iOS" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
@@ -95,7 +95,7 @@ jobs:
             -exportOptionsPlist $RUNNER_TEMP/export_options.plist \
             -exportPath $RUNNER_TEMP/export \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
