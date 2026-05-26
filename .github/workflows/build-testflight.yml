@@ -12,6 +12,9 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      ASC_KEY_ID: "WDXGY9WX55"
+      ASC_ISSUER_ID: "2be0734f-943a-4d61-9dc9-5d9045c46fec"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,7 +30,7 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Install Apple certificate and provisioning profile
+      - name: Install Apple certificate
         env:
           P12_BASE64: ${{ secrets.DIST_CERT_BASE64 }}
           P12_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
@@ -46,6 +49,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Setup ASC API Key for signing
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY_CONTENT }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$ASC_API_KEY" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
       - name: Build archive
         run: |
           xcodebuild archive \
@@ -54,6 +64,9 @@ jobs:
             -archivePath $RUNNER_TEMP/SymmetryCheck.xcarchive \
             -destination "generic/platform=iOS" \
             -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             CODE_SIGN_STYLE=Automatic \
             DEVELOPMENT_TEAM=83VGKGSQUH \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
@@ -81,24 +94,15 @@ jobs:
             -archivePath $RUNNER_TEMP/SymmetryCheck.xcarchive \
             -exportOptionsPlist $RUNNER_TEMP/export_options.plist \
             -exportPath $RUNNER_TEMP/export \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: Upload to App Store Connect
-        env:
-          ASC_API_KEY: ${{ secrets.ASC_API_KEY_CONTENT }}
         run: |
-          ASC_KEY_ID="WDXGY9WX55"
-          ASC_ISSUER_ID="2be0734f-943a-4d61-9dc9-5d9045c46fec"
-          mkdir -p ~/private_keys
-          echo "$ASC_API_KEY" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
           xcrun altool --upload-app \
             --type ios \
             --file "$RUNNER_TEMP/export/SymmetryCheck.ipa" \
             --apiKey "$ASC_KEY_ID" \
-            --apiIssuer "$ASC_ISSUER_ID" || true
-
-          xcrun notarytool submit "$RUNNER_TEMP/export/SymmetryCheck.ipa" \
-            --key ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
-            --key-id "$ASC_KEY_ID" \
-            --issuer "$ASC_ISSUER_ID" \
-            --wait 2>/dev/null || true
+            --apiIssuer "$ASC_ISSUER_ID"
