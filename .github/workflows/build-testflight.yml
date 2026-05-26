@@ -27,30 +27,44 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Import Distribution Certificate
+      - name: Set up ASC API Key and keychain
         env:
-          CERT_BASE64: ${{ secrets.DIST_CERT_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.DIST_CERT_PASSWORD }}
+          ASC_API_KEY_CONTENT: ${{ secrets.ASC_API_KEY_CONTENT }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          ASC_KEY_ID="WDXGY9WX55"
+
+          # Setup keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          echo "$CERT_BASE64" | base64 -D > cert.p12
-          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          rm cert.p12
+          security set-keychain-settings -lut 21600 build.keychain
 
-      - name: Set up ASC API Key
-        env:
-          ASC_API_KEY_CONTENT: ${{ secrets.ASC_API_KEY_CONTENT }}
-        run: |
+          # Setup ASC API key
           mkdir -p ~/.appstoreconnect/private_keys
-          echo "$ASC_API_KEY_CONTENT" | base64 -D > ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8
+          echo "$ASC_API_KEY_CONTENT" | base64 -D > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+
+      - name: Create distribution certificate
+        run: |
+          ASC_KEY_ID="WDXGY9WX55"
+          ASC_ISSUER_ID="2be0734f-943a-4d61-9dc9-5d9045c46fec"
+          ASC_P8_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+          # Generate CSR and private key
+          openssl req -new -newkey rsa:2048 -nodes \
+            -keyout /tmp/dist.key -out /tmp/dist.csr \
+            -subj "/CN=SymmetryCheck Distribution/O=tokyonasu"
+
+          # Use xcrun to create certificate via ASC
+          # First try building - xcodebuild with automatic signing will handle cert creation
+          echo "Certificate will be managed by automatic signing"
 
       - name: Build Archive
         run: |
+          ASC_KEY_ID="WDXGY9WX55"
+          ASC_ISSUER_ID="2be0734f-943a-4d61-9dc9-5d9045c46fec"
+          ASC_P8_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
           xcodebuild archive \
             -project SymmetryCheck.xcodeproj \
             -scheme SymmetryCheck \
@@ -61,12 +75,16 @@ jobs:
             DEVELOPMENT_TEAM=83VGKGSQUH \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8 \
-            -authenticationKeyID WDXGY9WX55 \
-            -authenticationKeyIssuerID 2be0734f-943a-4d61-9dc9-5d9045c46fec
+            -authenticationKeyPath "$ASC_P8_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: Export IPA
         run: |
+          ASC_KEY_ID="WDXGY9WX55"
+          ASC_ISSUER_ID="2be0734f-943a-4d61-9dc9-5d9045c46fec"
+          ASC_P8_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
           cat > $RUNNER_TEMP/export_options.plist << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -89,14 +107,16 @@ jobs:
             -exportOptionsPlist $RUNNER_TEMP/export_options.plist \
             -exportPath $RUNNER_TEMP/export \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_WDXGY9WX55.p8 \
-            -authenticationKeyID WDXGY9WX55 \
-            -authenticationKeyIssuerID 2be0734f-943a-4d61-9dc9-5d9045c46fec
+            -authenticationKeyPath "$ASC_P8_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: Upload to App Store Connect
         run: |
+          ASC_KEY_ID="WDXGY9WX55"
+          ASC_ISSUER_ID="2be0734f-943a-4d61-9dc9-5d9045c46fec"
           xcrun altool --upload-app \
             --type ios \
             --file "$RUNNER_TEMP/export/SymmetryCheck.ipa" \
-            --apiKey WDXGY9WX55 \
-            --apiIssuer 2be0734f-943a-4d61-9dc9-5d9045c46fec
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
