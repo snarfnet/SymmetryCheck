@@ -159,25 +159,43 @@ enum FaceAnalyzer {
         let top = points.first!
         let bottom = points.last!
 
+        // Top-bottom horizontal deviation (more sensitive: x8)
         let horizontalDeviation = top.x - bottom.x
         let verticalSpan = abs(top.y - bottom.y) + 0.0001
+        let straightness = max(0, 1.0 - (abs(horizontalDeviation) / verticalSpan) * 8)
 
-        let straightness = max(0, 1.0 - (abs(horizontalDeviation) / verticalSpan) * 3)
-
+        // Each point's deviation from ideal line (more sensitive: x50)
         var totalDeviation: CGFloat = 0
         let expectedX = { (y: CGFloat) -> CGFloat in
             let t = (y - top.y) / (bottom.y - top.y + 0.0001)
             return top.x + t * (bottom.x - top.x)
         }
-
         for point in points {
             totalDeviation += abs(point.x - expectedX(point.y))
         }
         let avgDeviation = totalDeviation / CGFloat(points.count)
-        let deviationScore = max(0, 1.0 - avgDeviation * 20)
+        let deviationScore = max(0, 1.0 - avgDeviation * 50)
 
-        let score = min(100, max(0, (straightness * 0.5 + deviationScore * 0.5) * 100))
-        let direction: SymmetryResult.SideDiff = abs(horizontalDeviation) < 0.01 ? .even : (horizontalDeviation > 0 ? .left : .right)
+        // Nose crest symmetry relative to center
+        var crestScore: Double = 1.0
+        if let crest = noseCrest, crest.pointCount > 1 {
+            let crestPts = pointsArray(crest)
+            let crestCenter = crestPts.map(\.x).reduce(0, +) / CGFloat(crestPts.count)
+            let centerLine = self.centerLine(from: nose, medianLine: medianLine)
+            let crestOffset = abs(crestCenter - centerLine)
+            crestScore = max(0, 1.0 - crestOffset * 15)
+        }
+
+        // Left-right nostril width balance from nose points
+        let noseCenter = points.map(\.x).reduce(0, +) / CGFloat(points.count)
+        let leftNose = points.filter { $0.x < noseCenter }
+        let rightNose = points.filter { $0.x >= noseCenter }
+        let leftSpread = leftNose.isEmpty ? 0 : abs(leftNose.map(\.x).min()! - noseCenter)
+        let rightSpread = rightNose.isEmpty ? 0 : abs(rightNose.map(\.x).max()! - noseCenter)
+        let spreadRatio = min(leftSpread, rightSpread) / max(leftSpread, rightSpread + 0.0001)
+
+        let score = min(100, max(0, (straightness * 0.3 + deviationScore * 0.25 + crestScore * 0.2 + spreadRatio * 0.25) * 100))
+        let direction: SymmetryResult.SideDiff = abs(horizontalDeviation) < 0.005 ? .even : (horizontalDeviation > 0 ? .left : .right)
 
         return (score, direction)
     }

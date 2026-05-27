@@ -4,43 +4,148 @@ import Vision
 enum PhotoComposer {
 
     static func compose(photo: UIImage, result: SymmetryResult, isEnglish: Bool) -> UIImage {
-        let size = photo.size
-        let renderer = UIGraphicsImageRenderer(size: size)
+        let photoSize = photo.size
+        // Report on LEFT (60%), Photo on RIGHT (40%)
+        let reportRatio: CGFloat = 0.6
+        let photoRatio: CGFloat = 0.4
+        let totalWidth = photoSize.width / photoRatio  // photo fills 40% of width
+        let totalHeight = photoSize.height
+        let reportWidth = totalWidth * reportRatio
+        let outputSize = CGSize(width: totalWidth, height: totalHeight)
+
+        let renderer = UIGraphicsImageRenderer(size: outputSize)
 
         return renderer.image { ctx in
-            photo.draw(at: .zero)
-
             let gc = ctx.cgContext
+
+            // Black background for report area
+            gc.setFillColor(UIColor(red: 0.05, green: 0.05, blue: 0.1, alpha: 1).cgColor)
+            gc.fill(CGRect(x: 0, y: 0, width: reportWidth, height: totalHeight))
+
+            // Draw photo on right side with landmarks
+            let photoRect = CGRect(x: reportWidth, y: 0, width: photoSize.width, height: photoSize.height)
+            photo.draw(in: photoRect)
+
+            // Draw landmarks on photo
             let box = result.boundingBox
-            let faceRect = CGRect(
-                x: box.origin.x * size.width,
-                y: (1 - box.origin.y - box.height) * size.height,
-                width: box.width * size.width,
-                height: box.height * size.height
+            let photoFaceRect = CGRect(
+                x: reportWidth + box.origin.x * photoSize.width,
+                y: (1 - box.origin.y - box.height) * photoSize.height,
+                width: box.width * photoSize.width,
+                height: box.height * photoSize.height
             )
 
-            // Draw face bounding box
             gc.setStrokeColor(UIColor.cyan.withAlphaComponent(0.7).cgColor)
             gc.setLineWidth(2)
-            gc.stroke(faceRect)
+            gc.stroke(photoFaceRect)
 
-            // Draw landmarks
             if let landmarks = result.landmarks {
-                drawAllLandmarks(gc: gc, landmarks: landmarks, faceRect: faceRect, imageSize: size, boundingBox: box)
+                drawLandmarksOnPhoto(gc: gc, landmarks: landmarks, boundingBox: box,
+                                     photoOrigin: CGPoint(x: reportWidth, y: 0), photoSize: photoSize)
             }
+            drawCenterLineOnPhoto(gc: gc, landmarks: result.landmarks, boundingBox: box,
+                                  photoOrigin: CGPoint(x: reportWidth, y: 0), photoSize: photoSize)
 
-            // Draw center line
-            drawCenterLine(gc: gc, landmarks: result.landmarks, faceRect: faceRect, imageSize: size, boundingBox: box)
-
-            // Draw data panel
-            drawDataPanel(gc: gc, result: result, imageSize: size, isEnglish: isEnglish)
-
-            // Draw individual scores near face parts
-            drawPartScores(gc: gc, result: result, faceRect: faceRect, isEnglish: isEnglish)
+            // Draw report panel on left side
+            drawReport(gc: gc, result: result, reportWidth: reportWidth, totalHeight: totalHeight, isEnglish: isEnglish)
         }
     }
 
-    private static func drawAllLandmarks(gc: CGContext, landmarks: VNFaceLandmarks2D, faceRect: CGRect, imageSize: CGSize, boundingBox: CGRect) {
+    // MARK: - Report Panel
+
+    private static func drawReport(gc: CGContext, result: SymmetryResult, reportWidth: CGFloat, totalHeight: CGFloat, isEnglish: Bool) {
+        let s = reportWidth / 500  // scale factor based on panel width
+        let pad: CGFloat = 30 * s
+        var y: CGFloat = 40 * s
+
+        // Title
+        let titleFont = UIFont.monospacedSystemFont(ofSize: 32 * s, weight: .bold)
+        let title = isEnglish ? "SYMMETRY ANALYSIS" : "対称性分析レポート"
+        draw(title, at: CGPoint(x: pad, y: y), font: titleFont, color: .cyan, gc: gc)
+        y += 50 * s
+
+        // Subtitle
+        let subFont = UIFont.monospacedSystemFont(ofSize: 18 * s, weight: .medium)
+        let sub = isEnglish ? "76-Point Facial Landmark Detection" : "76点 顔面ランドマーク検出"
+        draw(sub, at: CGPoint(x: pad, y: y), font: subFont, color: UIColor.white.withAlphaComponent(0.5), gc: gc)
+        y += 50 * s
+
+        // Divider
+        drawDivider(gc: gc, y: y, x1: pad, x2: reportWidth - pad)
+        y += 20 * s
+
+        // Overall score - BIG
+        let gradeFont = UIFont.monospacedSystemFont(ofSize: 72 * s, weight: .black)
+        let grade = gradeFor(result.overall)
+        let gradeColor = colorForScore(result.overall)
+        draw(grade, at: CGPoint(x: pad, y: y), font: gradeFont, color: gradeColor, gc: gc)
+
+        let scoreFont = UIFont.monospacedSystemFont(ofSize: 48 * s, weight: .black)
+        let scoreText = String(format: "%.1f%%", result.overall)
+        let gradeSize = (grade as NSString).size(withAttributes: [.font: gradeFont])
+        draw(scoreText, at: CGPoint(x: pad + gradeSize.width + 16 * s, y: y + 20 * s), font: scoreFont, color: gradeColor, gc: gc)
+        y += 90 * s
+
+        // Overall comment
+        let commentFont = UIFont.monospacedSystemFont(ofSize: 24 * s, weight: .medium)
+        draw(result.overallComment(isEnglish: isEnglish), at: CGPoint(x: pad, y: y),
+             font: commentFont, color: UIColor.white.withAlphaComponent(0.7), gc: gc)
+        y += 50 * s
+
+        // Divider
+        drawDivider(gc: gc, y: y, x1: pad, x2: reportWidth - pad)
+        y += 30 * s
+
+        // Detail rows
+        let labelFont = UIFont.monospacedSystemFont(ofSize: 28 * s, weight: .bold)
+        let valueFont = UIFont.monospacedSystemFont(ofSize: 28 * s, weight: .bold)
+        let cmtFont = UIFont.monospacedSystemFont(ofSize: 20 * s, weight: .medium)
+        let barHeight: CGFloat = 12 * s
+        let rowSpacing: CGFloat = 90 * s
+
+        let items: [(String, Double, UIColor, String)] = [
+            (isEnglish ? "Eye Balance" : "目のバランス", result.eyeBalance, .green, result.eyeComment(isEnglish: isEnglish)),
+            (isEnglish ? "Eyebrow" : "眉のバランス", result.eyebrowBalance, .yellow, result.eyebrowComment(isEnglish: isEnglish)),
+            (isEnglish ? "Nose" : "鼻の直線性", result.noseStraightness, .cyan, result.noseComment(isEnglish: isEnglish)),
+            (isEnglish ? "Mouth" : "口のバランス", result.mouthBalance, UIColor.systemPink, result.mouthComment(isEnglish: isEnglish)),
+            (isEnglish ? "Jaw Line" : "輪郭バランス", result.jawBalance, .white, result.jawComment(isEnglish: isEnglish)),
+        ]
+
+        for item in items {
+            // Label
+            draw(item.0, at: CGPoint(x: pad, y: y), font: labelFont, color: item.2.withAlphaComponent(0.9), gc: gc)
+
+            // Grade + value on right
+            let itemGrade = gradeFor(item.1)
+            let valText = String(format: "%@ %.1f%%", itemGrade, item.1)
+            let valColor = colorForScore(item.1)
+            let valSize = (valText as NSString).size(withAttributes: [.font: valueFont])
+            draw(valText, at: CGPoint(x: reportWidth - pad - valSize.width, y: y), font: valueFont, color: valColor, gc: gc)
+
+            // Progress bar
+            let barY = y + 34 * s
+            let barWidth = reportWidth - pad * 2
+            gc.setFillColor(UIColor.white.withAlphaComponent(0.1).cgColor)
+            gc.fill(CGRect(x: pad, y: barY, width: barWidth, height: barHeight))
+            gc.setFillColor(valColor.cgColor)
+            gc.fill(CGRect(x: pad, y: barY, width: barWidth * min(CGFloat(item.1) / 100, 1), height: barHeight))
+
+            // Comment
+            draw(item.3, at: CGPoint(x: pad, y: barY + barHeight + 6 * s), font: cmtFont, color: valColor.withAlphaComponent(0.7), gc: gc)
+
+            y += rowSpacing
+        }
+
+        // Footer
+        y = totalHeight - 50 * s
+        let footerFont = UIFont.monospacedSystemFont(ofSize: 16 * s, weight: .medium)
+        let footer = isEnglish ? "Symmetry Check — Real-time Analysis" : "シンメトリーチェック"
+        draw(footer, at: CGPoint(x: pad, y: y), font: footerFont, color: UIColor.cyan.withAlphaComponent(0.4), gc: gc)
+    }
+
+    // MARK: - Landmarks on Photo
+
+    private static func drawLandmarksOnPhoto(gc: CGContext, landmarks: VNFaceLandmarks2D, boundingBox: CGRect, photoOrigin: CGPoint, photoSize: CGSize) {
         let regions: [(VNFaceLandmarkRegion2D?, UIColor)] = [
             (landmarks.leftEye, .green),
             (landmarks.rightEye, .green),
@@ -53,7 +158,6 @@ enum PhotoComposer {
             (landmarks.faceContour, .white),
             (landmarks.leftPupil, .red),
             (landmarks.rightPupil, .red),
-            (landmarks.medianLine, UIColor(red: 1, green: 0.5, blue: 0, alpha: 1)),
         ]
 
         for (region, color) in regions {
@@ -62,14 +166,14 @@ enum PhotoComposer {
             gc.setFillColor(color.cgColor)
 
             for point in points {
-                let x = (boundingBox.origin.x + point.x * boundingBox.width) * imageSize.width
-                let y = (1 - (boundingBox.origin.y + point.y * boundingBox.height)) * imageSize.height
+                let x = photoOrigin.x + (boundingBox.origin.x + point.x * boundingBox.width) * photoSize.width
+                let y = (1 - (boundingBox.origin.y + point.y * boundingBox.height)) * photoSize.height
                 gc.fillEllipse(in: CGRect(x: x - 3, y: y - 3, width: 6, height: 6))
             }
         }
     }
 
-    private static func drawCenterLine(gc: CGContext, landmarks: VNFaceLandmarks2D?, faceRect: CGRect, imageSize: CGSize, boundingBox: CGRect) {
+    private static func drawCenterLineOnPhoto(gc: CGContext, landmarks: VNFaceLandmarks2D?, boundingBox: CGRect, photoOrigin: CGPoint, photoSize: CGSize) {
         guard let median = landmarks?.medianLine else { return }
         let points = FaceAnalyzer.pointsArray(median)
         guard points.count >= 2 else { return }
@@ -79,139 +183,34 @@ enum PhotoComposer {
         gc.setLineDash(phase: 0, lengths: [6, 4])
 
         let first = points.first!
-        let startX = (boundingBox.origin.x + first.x * boundingBox.width) * imageSize.width
-        let startY = (1 - (boundingBox.origin.y + first.y * boundingBox.height)) * imageSize.height
-        gc.move(to: CGPoint(x: startX, y: startY))
+        gc.move(to: CGPoint(
+            x: photoOrigin.x + (boundingBox.origin.x + first.x * boundingBox.width) * photoSize.width,
+            y: (1 - (boundingBox.origin.y + first.y * boundingBox.height)) * photoSize.height
+        ))
 
         for i in 1..<points.count {
-            let x = (boundingBox.origin.x + points[i].x * boundingBox.width) * imageSize.width
-            let y = (1 - (boundingBox.origin.y + points[i].y * boundingBox.height)) * imageSize.height
-            gc.addLine(to: CGPoint(x: x, y: y))
+            gc.addLine(to: CGPoint(
+                x: photoOrigin.x + (boundingBox.origin.x + points[i].x * boundingBox.width) * photoSize.width,
+                y: (1 - (boundingBox.origin.y + points[i].y * boundingBox.height)) * photoSize.height
+            ))
         }
         gc.strokePath()
         gc.setLineDash(phase: 0, lengths: [])
     }
 
-    private static func drawDataPanel(gc: CGContext, result: SymmetryResult, imageSize: CGSize, isEnglish: Bool) {
-        let scale: CGFloat = max(1.0, imageSize.width / 1000)
-        let panelWidth: CGFloat = min(imageSize.width * 0.55, 600 * scale)
-        let margin: CGFloat = 20 * scale
+    // MARK: - Helpers
 
-        let titleFont = UIFont.monospacedSystemFont(ofSize: 28 * scale, weight: .bold)
-        let overallFont = UIFont.monospacedSystemFont(ofSize: 36 * scale, weight: .black)
-        let labelFont = UIFont.monospacedSystemFont(ofSize: 20 * scale, weight: .bold)
-        let valueFont = UIFont.monospacedSystemFont(ofSize: 20 * scale, weight: .bold)
-        let commentFont = UIFont.monospacedSystemFont(ofSize: 16 * scale, weight: .medium)
-        let footerFont = UIFont.monospacedSystemFont(ofSize: 14 * scale, weight: .medium)
-
-        let rowHeight: CGFloat = 56 * scale
-        let panelHeight: CGFloat = 80 * scale + rowHeight * 6 + 50 * scale + 36 * scale
-        let panelRect = CGRect(x: margin, y: margin, width: panelWidth, height: panelHeight)
-
-        // Background
-        gc.setFillColor(UIColor.black.withAlphaComponent(0.8).cgColor)
-        gc.fill(panelRect)
-        gc.setStrokeColor(UIColor.cyan.withAlphaComponent(0.6).cgColor)
-        gc.setLineWidth(2)
-        gc.stroke(panelRect)
-
-        var y = margin + 14 * scale
-
-        // Title
-        let title = isEnglish ? "SYMMETRY ANALYSIS" : "対称性分析レポート"
-        let titleAttr: [NSAttributedString.Key: Any] = [.font: titleFont, .foregroundColor: UIColor.cyan]
-        (title as NSString).draw(at: CGPoint(x: margin + 16, y: y), withAttributes: titleAttr)
-        y += 40 * scale
-
-        // Overall
-        let overallText = String(format: "%@ %.1f%%", gradeFor(result.overall), result.overall)
-        let overallColor = colorForScore(result.overall)
-        let overallAttr: [NSAttributedString.Key: Any] = [.font: overallFont, .foregroundColor: overallColor]
-        (overallText as NSString).draw(at: CGPoint(x: margin + 16, y: y), withAttributes: overallAttr)
-        y += 44 * scale
-
-        let overallComment = result.overallComment(isEnglish: isEnglish)
-        let commentAttr: [NSAttributedString.Key: Any] = [.font: commentFont, .foregroundColor: UIColor.white.withAlphaComponent(0.6)]
-        (overallComment as NSString).draw(at: CGPoint(x: margin + 16, y: y), withAttributes: commentAttr)
-        y += 32 * scale
-
-        // Divider
-        gc.setStrokeColor(UIColor.cyan.withAlphaComponent(0.3).cgColor)
-        gc.setLineWidth(1)
-        gc.move(to: CGPoint(x: margin + 10, y: y))
-        gc.addLine(to: CGPoint(x: margin + panelWidth - 10, y: y))
-        gc.strokePath()
-        y += 10 * scale
-
-        // Detail rows
-        let items: [(String, Double, UIColor, String)] = [
-            (isEnglish ? "Eye" : "目", result.eyeBalance, .green, result.eyeComment(isEnglish: isEnglish)),
-            (isEnglish ? "Eyebrow" : "眉", result.eyebrowBalance, .yellow, result.eyebrowComment(isEnglish: isEnglish)),
-            (isEnglish ? "Nose" : "鼻", result.noseStraightness, .cyan, result.noseComment(isEnglish: isEnglish)),
-            (isEnglish ? "Mouth" : "口", result.mouthBalance, UIColor.systemPink, result.mouthComment(isEnglish: isEnglish)),
-            (isEnglish ? "Jaw" : "輪郭", result.jawBalance, .white, result.jawComment(isEnglish: isEnglish)),
-        ]
-
-        for item in items {
-            // Label + score
-            let labelAttr: [NSAttributedString.Key: Any] = [.font: labelFont, .foregroundColor: item.2.withAlphaComponent(0.9)]
-            (item.0 as NSString).draw(at: CGPoint(x: margin + 16, y: y), withAttributes: labelAttr)
-
-            let grade = gradeFor(item.1)
-            let valueText = String(format: "%.1f%% %@", item.1, grade)
-            let valueColor = colorForScore(item.1)
-            let valAttr: [NSAttributedString.Key: Any] = [.font: valueFont, .foregroundColor: valueColor]
-            let valSize = (valueText as NSString).size(withAttributes: valAttr)
-            (valueText as NSString).draw(at: CGPoint(x: margin + panelWidth - valSize.width - 16, y: y), withAttributes: valAttr)
-
-            // Comment
-            let cmtAttr: [NSAttributedString.Key: Any] = [.font: commentFont, .foregroundColor: valueColor.withAlphaComponent(0.7)]
-            (item.3 as NSString).draw(at: CGPoint(x: margin + 16, y: y + 26 * scale), withAttributes: cmtAttr)
-
-            y += rowHeight
-        }
-
-        // Footer
-        y += 4 * scale
-        let footer = isEnglish ? "76-Point Landmark Detection" : "76点ランドマーク検出"
-        let footerAttr: [NSAttributedString.Key: Any] = [.font: footerFont, .foregroundColor: UIColor.white.withAlphaComponent(0.4)]
-        (footer as NSString).draw(at: CGPoint(x: margin + 16, y: y), withAttributes: footerAttr)
+    private static func draw(_ text: String, at point: CGPoint, font: UIFont, color: UIColor, gc: CGContext) {
+        let attr: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        (text as NSString).draw(at: point, withAttributes: attr)
     }
 
-    private static func drawPartScores(gc: CGContext, result: SymmetryResult, faceRect: CGRect, isEnglish: Bool) {
-        let scale: CGFloat = max(1.0, faceRect.width / 300)
-        let font = UIFont.monospacedSystemFont(ofSize: 16 * scale, weight: .bold)
-        let commentFont = UIFont.monospacedSystemFont(ofSize: 13 * scale, weight: .medium)
-
-        let items: [(String, Double, String, CGPoint)] = [
-            (isEnglish ? "Eye" : "目", result.eyeBalance, result.eyeComment(isEnglish: isEnglish),
-             CGPoint(x: faceRect.maxX + 12, y: faceRect.midY - 60 * scale)),
-            (isEnglish ? "Nose" : "鼻", result.noseStraightness, result.noseComment(isEnglish: isEnglish),
-             CGPoint(x: faceRect.maxX + 12, y: faceRect.midY + 10)),
-            (isEnglish ? "Mouth" : "口", result.mouthBalance, result.mouthComment(isEnglish: isEnglish),
-             CGPoint(x: faceRect.maxX + 12, y: faceRect.midY + 70 * scale)),
-        ]
-
-        for item in items {
-            let text = String(format: "%@ %.0f%%", item.0, item.1)
-            let color = colorForScore(item.1)
-            let bg = UIColor.black.withAlphaComponent(0.7)
-
-            let textSize = (text as NSString).size(withAttributes: [.font: font])
-            let commentSize = (item.2 as NSString).size(withAttributes: [.font: commentFont])
-            let bgWidth = max(textSize.width, commentSize.width) + 12
-            let bgHeight = textSize.height + commentSize.height + 8
-
-            let bgRect = CGRect(x: item.3.x - 4, y: item.3.y - 3, width: bgWidth, height: bgHeight)
-            gc.setFillColor(bg.cgColor)
-            gc.fill(bgRect)
-
-            let attr: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-            (text as NSString).draw(at: item.3, withAttributes: attr)
-
-            let cmtAttr: [NSAttributedString.Key: Any] = [.font: commentFont, .foregroundColor: color.withAlphaComponent(0.7)]
-            (item.2 as NSString).draw(at: CGPoint(x: item.3.x, y: item.3.y + textSize.height + 2), withAttributes: cmtAttr)
-        }
+    private static func drawDivider(gc: CGContext, y: CGFloat, x1: CGFloat, x2: CGFloat) {
+        gc.setStrokeColor(UIColor.cyan.withAlphaComponent(0.3).cgColor)
+        gc.setLineWidth(1)
+        gc.move(to: CGPoint(x: x1, y: y))
+        gc.addLine(to: CGPoint(x: x2, y: y))
+        gc.strokePath()
     }
 
     private static func gradeFor(_ score: Double) -> String {
