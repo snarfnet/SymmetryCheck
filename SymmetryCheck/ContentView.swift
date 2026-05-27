@@ -222,10 +222,13 @@ struct ContentView: View {
     }
 
     private func captureAndSave() {
-        guard let result = camera.currentResult else { return }
+        guard camera.currentResult != nil else { return }
         camera.capturePhoto { photo in
             guard let photo = photo else { return }
-            let composed = PhotoComposer.compose(photo: photo, result: result, isEnglish: isEnglish)
+            // Re-analyze the captured photo for accurate coordinates
+            let freshResult = Self.analyzePhoto(photo)
+            let resultToUse = freshResult ?? camera.currentResult!
+            let composed = PhotoComposer.compose(photo: photo, result: resultToUse, isEnglish: isEnglish)
             savedImage = composed
             UIImageWriteToSavedPhotosAlbum(composed, nil, nil, nil)
             showSaved = true
@@ -233,6 +236,17 @@ struct ContentView: View {
                 showSaved = false
             }
         }
+    }
+
+    private static func analyzePhoto(_ image: UIImage) -> SymmetryResult? {
+        guard let cgImage = image.cgImage else { return nil }
+        let request = VNDetectFaceLandmarksRequest()
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+        try? handler.perform([request])
+        guard let results = request.results,
+              let face = results.first,
+              let landmarks = face.landmarks else { return nil }
+        return FaceAnalyzer.analyze(landmarks: landmarks, boundingBox: face.boundingBox)
     }
 
     private func gradeFor(_ score: Double) -> String {
