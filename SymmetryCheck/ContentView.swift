@@ -50,10 +50,10 @@ struct ContentView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(isEnglish ? "SYMMETRY CHECK" : "シンメトリーチェック")
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .font(.system(size: 20, weight: .bold, design: .monospaced))
                     .foregroundStyle(.cyan)
                 Text(isEnglish ? "Facial Symmetry Analyzer" : "顔面対称性分析システム")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.cyan.opacity(0.6))
             }
 
