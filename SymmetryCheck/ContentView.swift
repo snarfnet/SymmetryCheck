@@ -87,83 +87,97 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Overall score header
             HStack {
-                Text(isEnglish ? "OVERALL" : "総合")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.cyan.opacity(0.8))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isEnglish ? "OVERALL" : "総合")
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.cyan.opacity(0.8))
+                    Text(result.overallComment(isEnglish: isEnglish))
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
                 Spacer()
                 Text(gradeFor(result.overall))
-                    .font(.system(size: 16, weight: .black, design: .monospaced))
+                    .font(.system(size: 24, weight: .black, design: .monospaced))
                     .foregroundStyle(colorForScore(result.overall))
                 Text(String(format: "%.1f%%", result.overall))
-                    .font(.system(size: 22, weight: .black, design: .monospaced))
+                    .font(.system(size: 28, weight: .black, design: .monospaced))
                     .foregroundStyle(colorForScore(result.overall))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.black.opacity(0.8))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.85))
 
             Divider().overlay(.cyan.opacity(0.3))
 
-            // Detail metrics
-            VStack(spacing: 4) {
-                metricRow(isEnglish ? "Eye Balance" : "目のバランス", result.eyeBalance, .green)
-                metricRow(isEnglish ? "Eyebrow" : "眉のバランス", result.eyebrowBalance, .yellow)
-                metricRow(isEnglish ? "Nose Straight" : "鼻の直線性", result.noseStraightness, .cyan)
-                metricRow(isEnglish ? "Mouth" : "口のバランス", result.mouthBalance, .pink)
-                metricRow(isEnglish ? "Jaw Line" : "輪郭バランス", result.jawBalance, .white)
+            // Detail metrics with comments
+            VStack(spacing: 6) {
+                metricRow(isEnglish ? "Eye" : "目", result.eyeBalance, .green, result.eyeComment(isEnglish: isEnglish))
+                metricRow(isEnglish ? "Eyebrow" : "眉", result.eyebrowBalance, .yellow, result.eyebrowComment(isEnglish: isEnglish))
+                metricRow(isEnglish ? "Nose" : "鼻", result.noseStraightness, .cyan, result.noseComment(isEnglish: isEnglish))
+                metricRow(isEnglish ? "Mouth" : "口", result.mouthBalance, .pink, result.mouthComment(isEnglish: isEnglish))
+                metricRow(isEnglish ? "Jaw" : "輪郭", result.jawBalance, .white, result.jawComment(isEnglish: isEnglish))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.black.opacity(0.7))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.75))
 
             // 76 points indicator
             HStack {
                 Text(isEnglish ? "76-Point Landmark Detection" : "76点ランドマーク検出")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.4))
                 Spacer()
                 Text(isEnglish ? "Real-time Analysis" : "リアルタイム分析中")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.cyan.opacity(0.4))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
             .background(.black.opacity(0.6))
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.cyan.opacity(0.3), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.cyan.opacity(0.3), lineWidth: 1))
         .padding(.bottom, 8)
     }
 
-    private func metricRow(_ label: String, _ value: Double, _ color: Color) -> some View {
-        HStack(spacing: 8) {
-            Circle().fill(color).frame(width: 5, height: 5)
-            Text(label)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.8))
-                .frame(width: 110, alignment: .leading)
+    private func metricRow(_ label: String, _ value: Double, _ color: Color, _ comment: String) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(label)
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(width: 50, alignment: .leading)
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.white.opacity(0.1))
-                        .frame(height: 6)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(colorForScore(value))
-                        .frame(width: geo.size.width * min(value / 100, 1), height: 6)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(.white.opacity(0.1))
+                            .frame(height: 8)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(colorForScore(value))
+                            .frame(width: geo.size.width * min(value / 100, 1), height: 8)
+                    }
                 }
+                .frame(height: 8)
+
+                Text(String(format: "%.1f", value))
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(colorForScore(value))
+                    .frame(width: 44, alignment: .trailing)
+
+                Text(gradeFor(value))
+                    .font(.system(size: 14, weight: .black, design: .monospaced))
+                    .foregroundStyle(colorForScore(value))
+                    .frame(width: 28, alignment: .trailing)
             }
-            .frame(height: 6)
-
-            Text(String(format: "%.1f", value))
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(colorForScore(value))
-                .frame(width: 40, alignment: .trailing)
-
-            Text(gradeFor(value))
-                .font(.system(size: 10, weight: .black, design: .monospaced))
-                .foregroundStyle(colorForScore(value))
-                .frame(width: 24, alignment: .trailing)
+            HStack {
+                Text(comment)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(colorForScore(value).opacity(0.7))
+                Spacer()
+            }
+            .padding(.leading, 22)
         }
     }
 

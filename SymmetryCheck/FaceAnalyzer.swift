@@ -11,34 +11,45 @@ enum FaceAnalyzer {
         // Face center line from nose
         let noseLine = centerLine(from: landmarks.nose, medianLine: landmarks.medianLine)
 
-        result.eyeBalance = measurePairBalance(
+        let eyeInfo = measurePairBalanceDetailed(
             left: landmarks.leftEye,
             right: landmarks.rightEye,
             center: noseLine
         )
+        result.eyeBalance = eyeInfo.score
+        result.eyeSizeDiff = eyeInfo.sizeDiff
+        result.eyeHeightDiff = eyeInfo.heightDiff
 
-        result.eyebrowBalance = measurePairBalance(
+        let browInfo = measurePairBalanceDetailed(
             left: landmarks.leftEyebrow,
             right: landmarks.rightEyebrow,
             center: noseLine
         )
+        result.eyebrowBalance = browInfo.score
+        result.eyebrowHeightDiff = browInfo.heightDiff
 
-        result.mouthBalance = measureMouthBalance(
+        let mouthInfo = measureMouthBalanceDetailed(
             outerLips: landmarks.outerLips,
             innerLips: landmarks.innerLips,
             center: noseLine
         )
+        result.mouthBalance = mouthInfo.score
+        result.mouthShift = mouthInfo.shift
 
-        result.noseStraightness = measureNoseStraightness(
+        let noseInfo = measureNoseStraightnessDetailed(
             nose: landmarks.nose,
             noseCrest: landmarks.noseCrest,
             medianLine: landmarks.medianLine
         )
+        result.noseStraightness = noseInfo.score
+        result.noseDirection = noseInfo.direction
 
-        result.jawBalance = measureJawBalance(
+        let jawInfo = measureJawBalanceDetailed(
             faceContour: landmarks.faceContour,
             center: noseLine
         )
+        result.jawBalance = jawInfo.score
+        result.jawWidthDiff = jawInfo.widthDiff
 
         result.overall = [
             result.eyeBalance * 0.25,
@@ -69,13 +80,13 @@ enum FaceAnalyzer {
 
     // MARK: - Pair Balance (eyes, eyebrows)
 
-    private static func measurePairBalance(
+    private static func measurePairBalanceDetailed(
         left: VNFaceLandmarkRegion2D?,
         right: VNFaceLandmarkRegion2D?,
         center: CGFloat
-    ) -> Double {
+    ) -> (score: Double, sizeDiff: SymmetryResult.SideDiff, heightDiff: SymmetryResult.SideDiff) {
         guard let left = left, let right = right,
-              left.pointCount > 0, right.pointCount > 0 else { return 50 }
+              left.pointCount > 0, right.pointCount > 0 else { return (50, .even, .even) }
 
         let leftPts = pointsArray(left)
         let rightPts = pointsArray(right)
@@ -83,80 +94,76 @@ enum FaceAnalyzer {
         let leftCenter = centroid(leftPts)
         let rightCenter = centroid(rightPts)
 
-        // Distance from center line
         let leftDist = abs(leftCenter.x - center)
         let rightDist = abs(rightCenter.x - center)
-
         let distRatio = min(leftDist, rightDist) / max(leftDist, rightDist + 0.0001)
 
-        // Height difference
-        let heightDiff = abs(leftCenter.y - rightCenter.y)
-        let heightScore = max(0, 1.0 - heightDiff * 10)
+        let hDiff = leftCenter.y - rightCenter.y
+        let heightScore = max(0, 1.0 - abs(hDiff) * 10)
 
-        // Size comparison
         let leftSize = regionSize(leftPts)
         let rightSize = regionSize(rightPts)
         let sizeRatio = min(leftSize, rightSize) / max(leftSize, rightSize + 0.0001)
 
-        let score = (distRatio * 0.4 + heightScore * 0.35 + sizeRatio * 0.25) * 100
-        return min(100, max(0, score))
+        let score = min(100, max(0, (distRatio * 0.4 + heightScore * 0.35 + sizeRatio * 0.25) * 100))
+
+        let sizeDiff: SymmetryResult.SideDiff = abs(leftSize - rightSize) < 0.0001 ? .even : (leftSize > rightSize ? .left : .right)
+        let heightDiffDir: SymmetryResult.SideDiff = abs(hDiff) < 0.005 ? .even : (hDiff > 0 ? .left : .right)
+
+        return (score, sizeDiff, heightDiffDir)
     }
 
     // MARK: - Mouth Balance
 
-    private static func measureMouthBalance(
+    private static func measureMouthBalanceDetailed(
         outerLips: VNFaceLandmarkRegion2D?,
         innerLips: VNFaceLandmarkRegion2D?,
         center: CGFloat
-    ) -> Double {
-        guard let lips = outerLips, lips.pointCount > 0 else { return 50 }
+    ) -> (score: Double, shift: SymmetryResult.SideDiff) {
+        guard let lips = outerLips, lips.pointCount > 0 else { return (50, .even) }
 
         let points = pointsArray(lips)
         let mouthCenter = centroid(points)
 
-        // Horizontal center offset
-        let centerOffset = abs(mouthCenter.x - center)
-        let centerScore = max(0, 1.0 - centerOffset * 8)
+        let centerOffset = mouthCenter.x - center
+        let centerScore = max(0, 1.0 - abs(centerOffset) * 8)
 
-        // Left-right width balance
         let leftPoints = points.filter { $0.x < center }
         let rightPoints = points.filter { $0.x >= center }
 
         let leftWidth = leftPoints.isEmpty ? 0 : abs(leftPoints.map(\.x).min()! - center)
         let rightWidth = rightPoints.isEmpty ? 0 : abs(rightPoints.map(\.x).max()! - center)
-
         let widthRatio = min(leftWidth, rightWidth) / max(leftWidth, rightWidth + 0.0001)
 
-        // Corner height balance
         let leftCornerY = points.first?.y ?? 0
         let rightCornerY = points.count > 6 ? points[points.count / 2].y : leftCornerY
         let cornerDiff = abs(leftCornerY - rightCornerY)
         let cornerScore = max(0, 1.0 - cornerDiff * 15)
 
-        let score = (centerScore * 0.3 + widthRatio * 0.4 + cornerScore * 0.3) * 100
-        return min(100, max(0, score))
+        let score = min(100, max(0, (centerScore * 0.3 + widthRatio * 0.4 + cornerScore * 0.3) * 100))
+        let shift: SymmetryResult.SideDiff = abs(centerOffset) < 0.01 ? .even : (centerOffset < 0 ? .left : .right)
+
+        return (score, shift)
     }
 
     // MARK: - Nose Straightness
 
-    private static func measureNoseStraightness(
+    private static func measureNoseStraightnessDetailed(
         nose: VNFaceLandmarkRegion2D?,
         noseCrest: VNFaceLandmarkRegion2D?,
         medianLine: VNFaceLandmarkRegion2D?
-    ) -> Double {
-        guard let nose = nose, nose.pointCount > 1 else { return 50 }
+    ) -> (score: Double, direction: SymmetryResult.SideDiff) {
+        guard let nose = nose, nose.pointCount > 1 else { return (50, .even) }
 
         let points = pointsArray(nose)
         let top = points.first!
         let bottom = points.last!
 
-        // Ideal: straight vertical line
-        let horizontalDeviation = abs(top.x - bottom.x)
+        let horizontalDeviation = top.x - bottom.x
         let verticalSpan = abs(top.y - bottom.y) + 0.0001
 
-        let straightness = max(0, 1.0 - (horizontalDeviation / verticalSpan) * 3)
+        let straightness = max(0, 1.0 - (abs(horizontalDeviation) / verticalSpan) * 3)
 
-        // Check each point's deviation from the line
         var totalDeviation: CGFloat = 0
         let expectedX = { (y: CGFloat) -> CGFloat in
             let t = (y - top.y) / (bottom.y - top.y + 0.0001)
@@ -169,23 +176,26 @@ enum FaceAnalyzer {
         let avgDeviation = totalDeviation / CGFloat(points.count)
         let deviationScore = max(0, 1.0 - avgDeviation * 20)
 
-        let score = (straightness * 0.5 + deviationScore * 0.5) * 100
-        return min(100, max(0, score))
+        let score = min(100, max(0, (straightness * 0.5 + deviationScore * 0.5) * 100))
+        let direction: SymmetryResult.SideDiff = abs(horizontalDeviation) < 0.01 ? .even : (horizontalDeviation > 0 ? .left : .right)
+
+        return (score, direction)
     }
 
     // MARK: - Jaw Balance
 
-    private static func measureJawBalance(
+    private static func measureJawBalanceDetailed(
         faceContour: VNFaceLandmarkRegion2D?,
         center: CGFloat
-    ) -> Double {
-        guard let contour = faceContour, contour.pointCount > 4 else { return 50 }
+    ) -> (score: Double, widthDiff: SymmetryResult.SideDiff) {
+        guard let contour = faceContour, contour.pointCount > 4 else { return (50, .even) }
 
         let points = pointsArray(contour)
         let count = points.count
 
-        // Compare left half and right half mirrored
         var totalDiff: CGFloat = 0
+        var leftTotalDist: CGFloat = 0
+        var rightTotalDist: CGFloat = 0
         var pairs = 0
 
         for i in 0..<count / 2 {
@@ -196,14 +206,18 @@ enum FaceAnalyzer {
             let rightDist = abs(rightPoint.x - center)
             let heightDiff = abs(leftPoint.y - rightPoint.y)
 
-            let distDiff = abs(leftDist - rightDist)
-            totalDiff += distDiff + heightDiff
+            leftTotalDist += leftDist
+            rightTotalDist += rightDist
+            totalDiff += abs(leftDist - rightDist) + heightDiff
             pairs += 1
         }
 
         let avgDiff = totalDiff / CGFloat(max(pairs, 1))
-        let score = max(0, 1.0 - avgDiff * 8) * 100
-        return min(100, max(0, score))
+        let score = min(100, max(0, max(0, 1.0 - avgDiff * 8) * 100))
+        let diff = abs(leftTotalDist - rightTotalDist)
+        let widthDiff: SymmetryResult.SideDiff = diff < 0.05 ? .even : (leftTotalDist > rightTotalDist ? .left : .right)
+
+        return (score, widthDiff)
     }
 
     // MARK: - Helpers
