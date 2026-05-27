@@ -226,9 +226,10 @@ struct ContentView: View {
         camera.capturePhoto { photo in
             guard let photo = photo else { return }
             // Re-analyze the captured photo for accurate coordinates
-            let freshResult = Self.analyzePhoto(photo)
+            let normalized = Self.normalizeOrientation(photo)
+            let freshResult = Self.analyzePhoto(normalized)
             let resultToUse = freshResult ?? camera.currentResult!
-            let composed = PhotoComposer.compose(photo: photo, result: resultToUse, isEnglish: isEnglish)
+            let composed = PhotoComposer.compose(photo: normalized, result: resultToUse, isEnglish: isEnglish)
             savedImage = composed
             UIImageWriteToSavedPhotosAlbum(composed, nil, nil, nil)
             showSaved = true
@@ -239,7 +240,9 @@ struct ContentView: View {
     }
 
     private static func analyzePhoto(_ image: UIImage) -> SymmetryResult? {
-        guard let cgImage = image.cgImage else { return nil }
+        // Normalize orientation so cgImage matches the visual layout
+        let normalized = normalizeOrientation(image)
+        guard let cgImage = normalized.cgImage else { return nil }
         let request = VNDetectFaceLandmarksRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
         try? handler.perform([request])
@@ -247,6 +250,14 @@ struct ContentView: View {
               let face = results.first,
               let landmarks = face.landmarks else { return nil }
         return FaceAnalyzer.analyze(landmarks: landmarks, boundingBox: face.boundingBox)
+    }
+
+    private static func normalizeOrientation(_ image: UIImage) -> UIImage {
+        guard image.imageOrientation != .up else { return image }
+        let renderer = UIGraphicsImageRenderer(size: image.size)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
     }
 
     private func gradeFor(_ score: Double) -> String {
