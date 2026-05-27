@@ -55,56 +55,56 @@ enum PhotoComposer {
 
     private static func drawReport(gc: CGContext, result: SymmetryResult, reportWidth: CGFloat, totalHeight: CGFloat, isEnglish: Bool) {
         // Scale based on height to ensure everything fits
-        let s = totalHeight / 1400
-        let pad: CGFloat = 30 * s
-        var y: CGFloat = 40 * s
+        let s = totalHeight / 1000
+        let pad: CGFloat = 24 * s
+        var y: CGFloat = 30 * s
 
         // Title
-        let titleFont = UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .bold)
+        let titleFont = UIFont.monospacedSystemFont(ofSize: 36 * s, weight: .bold)
         let title = isEnglish ? "SYMMETRY ANALYSIS" : "対称性分析レポート"
         draw(title, at: CGPoint(x: pad, y: y), font: titleFont, color: .cyan, gc: gc)
-        y += 44 * s
+        y += 48 * s
 
         // Subtitle
-        let subFont = UIFont.monospacedSystemFont(ofSize: 16 * s, weight: .medium)
-        let sub = isEnglish ? "76-Point Facial Landmark Detection" : "76点 顔面ランドマーク検出"
+        let subFont = UIFont.monospacedSystemFont(ofSize: 20 * s, weight: .medium)
+        let sub = isEnglish ? "76-Point Landmark Detection" : "76点ランドマーク検出"
         draw(sub, at: CGPoint(x: pad, y: y), font: subFont, color: UIColor.white.withAlphaComponent(0.5), gc: gc)
-        y += 40 * s
+        y += 36 * s
+
+        // Divider
+        drawDivider(gc: gc, y: y, x1: pad, x2: reportWidth - pad)
+        y += 14 * s
+
+        // Overall score - VERY BIG
+        let gradeFont = UIFont.monospacedSystemFont(ofSize: 100 * s, weight: .black)
+        let grade = gradeFor(result.overall)
+        let gradeColor = colorForScore(result.overall)
+        draw(grade, at: CGPoint(x: pad, y: y), font: gradeFont, color: gradeColor, gc: gc)
+
+        let scoreFont = UIFont.monospacedSystemFont(ofSize: 64 * s, weight: .black)
+        let scoreText = String(format: "%.1f%%", result.overall)
+        let gradeSize = (grade as NSString).size(withAttributes: [.font: gradeFont])
+        draw(scoreText, at: CGPoint(x: pad + gradeSize.width + 10 * s, y: y + 28 * s), font: scoreFont, color: gradeColor, gc: gc)
+        y += 120 * s
+
+        // Overall comment
+        let commentFont = UIFont.monospacedSystemFont(ofSize: 28 * s, weight: .medium)
+        draw(result.overallComment(isEnglish: isEnglish), at: CGPoint(x: pad, y: y),
+             font: commentFont, color: UIColor.white.withAlphaComponent(0.7), gc: gc)
+        y += 44 * s
 
         // Divider
         drawDivider(gc: gc, y: y, x1: pad, x2: reportWidth - pad)
         y += 16 * s
 
-        // Overall score - BIG
-        let gradeFont = UIFont.monospacedSystemFont(ofSize: 64 * s, weight: .black)
-        let grade = gradeFor(result.overall)
-        let gradeColor = colorForScore(result.overall)
-        draw(grade, at: CGPoint(x: pad, y: y), font: gradeFont, color: gradeColor, gc: gc)
-
-        let scoreFont = UIFont.monospacedSystemFont(ofSize: 42 * s, weight: .black)
-        let scoreText = String(format: "%.1f%%", result.overall)
-        let gradeSize = (grade as NSString).size(withAttributes: [.font: gradeFont])
-        draw(scoreText, at: CGPoint(x: pad + gradeSize.width + 14 * s, y: y + 16 * s), font: scoreFont, color: gradeColor, gc: gc)
-        y += 80 * s
-
-        // Overall comment
-        let commentFont = UIFont.monospacedSystemFont(ofSize: 22 * s, weight: .medium)
-        draw(result.overallComment(isEnglish: isEnglish), at: CGPoint(x: pad, y: y),
-             font: commentFont, color: UIColor.white.withAlphaComponent(0.7), gc: gc)
-        y += 40 * s
-
-        // Divider
-        drawDivider(gc: gc, y: y, x1: pad, x2: reportWidth - pad)
-        y += 20 * s
-
         // Detail rows - fit 5 rows in remaining space
-        let remainingHeight = totalHeight - y - 60 * s
+        let remainingHeight = totalHeight - y - 40 * s
         let rowSpacing = remainingHeight / 5
 
-        let labelFont = UIFont.monospacedSystemFont(ofSize: 24 * s, weight: .bold)
-        let valueFont = UIFont.monospacedSystemFont(ofSize: 24 * s, weight: .bold)
-        let cmtFont = UIFont.monospacedSystemFont(ofSize: 18 * s, weight: .medium)
-        let barHeight: CGFloat = 10 * s
+        let labelFont = UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .bold)
+        let valueFont = UIFont.monospacedSystemFont(ofSize: 36 * s, weight: .black)
+        let cmtFont = UIFont.monospacedSystemFont(ofSize: 22 * s, weight: .medium)
+        let barHeight: CGFloat = 12 * s
 
         let items: [(String, Double, UIColor, String)] = [
             (isEnglish ? "Eye Balance" : "目のバランス", result.eyeBalance, .green, result.eyeComment(isEnglish: isEnglish)),
