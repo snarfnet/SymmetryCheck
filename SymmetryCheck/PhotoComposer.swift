@@ -103,7 +103,7 @@ enum PhotoComposer {
 
         let labelFont = UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .bold)
         let valueFont = UIFont.monospacedSystemFont(ofSize: 36 * s, weight: .black)
-        let cmtFont = UIFont.monospacedSystemFont(ofSize: 22 * s, weight: .medium)
+        let cmtFont = UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .bold)
         let barHeight: CGFloat = 12 * s
 
         let items: [(String, Double, UIColor, String)] = [
