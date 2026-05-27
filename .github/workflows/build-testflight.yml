@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   upload-testflight:
-    runs-on: macos-15
+    runs-on: macos-latest
     env:
       APP_BUNDLE_ID: com.tokyonasu.symmetrycheck
       BUNDLE_NAME: SymmetryCheck
@@ -23,7 +23,9 @@ jobs:
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          XCODE_PATH=$(ls -d /Applications/Xcode_26*.app /Applications/Xcode_16*.app 2>/dev/null | sort -rV | head -1)
+          echo "Using Xcode at: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
       - name: Install tools
